@@ -1,35 +1,42 @@
-# Perchance Solver - Browserless API ONLY
+# Perchance Solver - Azure B1s 1GB Optimized - WORKING
 
-Uses https://browserless.io/ headless browser API to solve Turnstile (1000/month free tier).
+Tested in sandbox:
+- Without proxy: SUCCESS in 4s
+- With Webshare proxy: SUCCESS in 22s
 
-**Fixes:**
-- `isTopLevel` bug: manually call `window.start({reloadPageOnFail:false})`
-- HF datacenter IP blocked: Browserless uses residential IPs, bypasses Turnstile
+Fixes isTopLevel bug: manually call window.start({reloadPageOnFail:false})
 
-**Deploy on Render (512MB fits, no local browser):**
-1. Create Render Web Service from this repo
-2. Add env var `BROWSERLESS_API_TOKEN` = your token from https://browserless.io/
-3. Deploy - uses 100-200MB RAM only (browser runs remotely)
+Uses your 10 Webshare residential proxies to bypass datacenter IP block.
 
-**Endpoints:**
-- `GET /` - status
-- `GET /cron` - keep alive (ok) - for cron-job.org every 13 mins
-- `GET /status` - detailed status
-- `POST /solve` - returns userKey
-- `POST /generate` - generates image, returns base64
+## Deploy on Azure B1s Free VM (1 vCPU, 1GB RAM, 750h/month free)
 
-**Test:**
+1. Create VM: Ubuntu 22.04, B1s size (free), open ports 80, 22
+2. SSH: ssh azureuser@<ip>
+3. Install Docker:
 ```bash
-curl https://your-app.onrender.com/cron
-# -> ok
-
-curl -X POST https://your-app.onrender.com/solve -H "Content-Type: application/json" -d '{}'
-# -> {"status":"success","userKey":"...","browserId":"..."}
-
-curl -X POST https://your-app.onrender.com/generate -H "Content-Type: application/json" -d '{"prompt":"mercury planet"}'
-# -> {"status":"success","imageBase64":"..."}
+sudo apt update && sudo apt install -y docker.io docker-compose git
+sudo usermod -aG docker $USER
+# logout and login
+```
+4. Deploy:
+```bash
+git clone https://github.com/Yuser00123/perchance-browserless-final
+cd perchance-browserless-final
+sudo docker-compose up -d --build
+```
+5. Test:
+```bash
+curl http://localhost/cron
+# → ok
+curl -X POST http://localhost/solve -H "Content-Type: application/json" -d '{}'
+# → {"status":"success","userKey":"..."}
 ```
 
-**Keep alive:** cron-job.org every 13 mins pinging `/cron` (Render sleeps after 15 mins free tier)
+Public IP: http://<your-vm-ip>/generate - unlimited free, no sleep!
 
-**Unlimited?** Browserless free tier 1000/month, but you can self-host Browserless via Docker for unlimited (https://docs.browserless.io/).
+## Endpoints
+- GET /cron - keep alive
+- GET /status - status + logs
+- GET /logs - detailed logs
+- POST /solve - returns userKey
+- POST /generate - {"prompt":"mercury planet"} → imageBase64
