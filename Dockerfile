@@ -1,8 +1,8 @@
-FROM python:3.11-slim
+FROM python:3.11-slim-bookworm
 
 WORKDIR /app
 
-# Install chromium + deps for SeleniumBase UC + Playwright
+# Install chromium + deps for SeleniumBase UC + Playwright (bookworm has required fonts)
 RUN apt-get update && apt-get install -y \
     wget gnupg curl \
     chromium chromium-driver \
@@ -17,8 +17,8 @@ RUN which chromium-browser && chromium-browser --version || echo "chromium-brows
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+# Install playwright browser only, NOT deps (deps already installed + bookworm has fonts)
 RUN playwright install chromium
-RUN playwright install-deps chromium
 
 COPY solver.py .
 
