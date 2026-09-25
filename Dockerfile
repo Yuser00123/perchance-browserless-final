@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install chromium + deps for SeleniumBase UC
+# Install chromium + deps for SeleniumBase UC + Playwright
 RUN apt-get update && apt-get install -y \
     wget gnupg curl \
     chromium chromium-driver \
@@ -12,11 +12,13 @@ RUN apt-get update && apt-get install -y \
     fonts-liberation libappindicator3-1 xdg-utils xvfb \
     && rm -rf /var/lib/apt/lists/*
 
-# Check chromium
-RUN which chromium && chromium --version || echo "chromium not found, trying chromium-browser" && which chromium-browser && chromium-browser --version || echo "try google-chrome" && which google-chrome || echo "no chrome found"
+RUN which chromium && chromium --version || echo "chromium check"
+RUN which chromium-browser && chromium-browser --version || echo "chromium-browser check"
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN playwright install chromium
+RUN playwright install-deps chromium
 
 COPY solver.py .
 

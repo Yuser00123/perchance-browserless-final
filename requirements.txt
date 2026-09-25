@@ -3,3 +3,4 @@ curl_cffi==0.11.3
 fastapi==0.110.3
 uvicorn==0.29.0
 pydantic==2.7.4
+playwright==1.44.0
