@@ -1,11 +1,7 @@
 """
-Perchance Solver - Azure B1s 1GB Optimized - WORKING
-Tested in sandbox: 4s without proxy, 22s with Webshare proxy
-Fixes isTopLevel bug + datacenter IP block via residential proxy
-Optimized for 1GB RAM: single-process, chromium-headless-shell
+Perchance Solver - Azure B1s 1GB - FIXED Chrome binary + proxy
 """
-
-import os, re, json, time, random, secrets, base64, asyncio, glob
+import os, re, json, time, random, secrets, base64, asyncio, glob, shutil
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
@@ -41,39 +37,42 @@ def log(msg: str):
     if len(LAST_ERROR["logs"]) > 100:
         LAST_ERROR["logs"] = LAST_ERROR["logs"][-100:]
 
+def find_chromium():
+    # Try multiple locations
+    for path in ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome", "/usr/bin/chromium-browser", shutil.which("chromium"), shutil.which("chromium-browser"), shutil.which("google-chrome")]:
+        if path and os.path.exists(path):
+            return path
+    # Try playwright cache
+    cands = glob.glob("/root/.cache/ms-playwright/chromium-*/chrome-linux64/chrome")
+    if cands:
+        return cands[0]
+    cands = glob.glob("/home/*/.cache/ms-playwright/chromium-*/chrome-linux64/chrome")
+    if cands:
+        return cands[0]
+    return "/usr/bin/chromium"
+
 WEBSHARE_PROXIES = [
     "zfixrxxu:gtc6gc36einh@31.59.20.176:6754",
     "zfixrxxu:gtc6gc36einh@45.38.107.97:6014",
     "zfixrxxu:gtc6gc36einh@64.137.96.74:6641",
-    "zfixrxxu:gtc6gc36einh@198.23.243.226:6361",
-    "zfixrxxu:gtc6gc36einh@38.154.185.97:6370",
-    "zfixrxxu:gtc6gc36einh@84.247.60.125:6095",
-    "zfixrxxu:gtc6gc36einh@142.111.67.146:5611",
-    "zfixrxxu:gtc6gc36einh@191.96.254.138:6185",
-    "zfixrxxu:gtc6gc36einh@31.58.9.4:6077",
-    "zfixrxxu:gtc6gc36einh@198.46.161.42:5092",
 ]
 
 async def get_user_key_via_seleniumbase_proxy(proxy: Optional[str] = None, timeout: int = 90) -> Optional[Dict[str, Any]]:
-    log(f"[Solver] Trying SeleniumBase UC proxy={proxy[:20] if proxy else 'None'}")
+    log(f"[Solver] Trying proxy={proxy[:20] if proxy else 'None'}")
     try:
         from seleniumbase import SB
-        chromium_path = "/usr/bin/chromium"
+        chromium_path = find_chromium()
+        log(f"[Solver] Chromium path: {chromium_path}, exists: {os.path.exists(chromium_path)}, proxy: {proxy}")
         if not os.path.exists(chromium_path):
-            cands = glob.glob("/home/user/.cache/ms-playwright/chromium-*/chrome-linux64/chrome")
-            if cands:
-                chromium_path = cands[0]
-            else:
-                # Try playwright headless shell (smaller, 114MB)
-                cands = glob.glob("/home/user/.cache/ms-playwright/chromium_headless_shell-*/chrome-linux64/headless_shell")
-                if cands:
-                    chromium_path = cands[0]
-        
-        # Optimized for 1GB RAM: single-process, no-zygote, disable-dev-shm
+            log(f"[Solver] Chromium not found at {chromium_path}, trying to install via playwright")
+            os.system("playwright install chromium || python -m playwright install chromium")
+            chromium_path = find_chromium()
+            log(f"[Solver] After install, chromium path: {chromium_path}")
+
         sb_kwargs = {
             "uc": True,
             "headless": True,
-            "chromium_arg": "--no-sandbox --disable-gpu --disable-dev-shm-usage --single-process --no-zygote --disable-blink-features=AutomationControlled --lang=en-US --user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+            "chromium_arg": "--no-sandbox --disable-gpu --disable-dev-shm-usage --disable-setuid-sandbox --disable-extensions --disable-infobars --lang=en-US",
             "binary_location": chromium_path,
         }
         if proxy:
@@ -84,15 +83,11 @@ async def get_user_key_via_seleniumbase_proxy(proxy: Optional[str] = None, timeo
                 import json as _json, urllib.parse as _up, random as _rand
                 hash_data = {"prompt": "test", "seed": 0, "resolution": "512x512", "guidanceScale": 7, "negativePrompt": "", "requestId": f"sb_{_rand.random()}", "iframeId": f"test_{_rand.randint(0,1000000)}"}
                 embed_url = f"{BASE_EMBED}/embed#{_up.quote(_json.dumps(hash_data))}"
-                log(f"[SB Proxy={proxy[:20] if proxy else 'None'}] Opening...")
-                try:
-                    sb.open(embed_url)
-                except Exception as e:
-                    log(f"[SB] Open failed: {e}")
-                    return {"error": f"open failed {e}"}
+                log(f"[SB] Opening {embed_url[:80]}...")
+                sb.open(embed_url)
                 sb.sleep(3)
                 is_top = sb.execute_script("return window==window.top")
-                log(f"[SB] isTop: {is_top}")
+                log(f"[SB] isTop: {is_top}, title: {sb.execute_script('return document.title')}")
                 sb.execute_script("window.start({reloadPageOnFail:false})")
                 log(f"[SB] Called start()")
                 result = sb.execute_async_script("""
@@ -122,8 +117,8 @@ async def get_user_key_via_seleniumbase_proxy(proxy: Optional[str] = None, timeo
         log(f"[Solver] Result: {result}")
         user_key = result.get('response', {}).get('userKey') if isinstance(result, dict) else None
         if user_key and re.fullmatch(r"[a-f0-9]{64}", user_key):
-            log(f"[Solver] Got userKey: {user_key[:12]}... attempt {result.get('attempt')}")
-            return {"userKey": user_key, "browserId": result.get('bid', load_cached_browser_id()), "method": "seleniumbase-uc-proxy-1gb", "proxy": proxy, "attempt": result.get('attempt')}
+            log(f"[Solver] Got userKey: {user_key[:12]}...")
+            return {"userKey": user_key, "browserId": result.get('bid', load_cached_browser_id()), "method": "seleniumbase-uc-proxy", "proxy": proxy, "attempt": result.get('attempt')}
         return None
     except Exception as e:
         log(f"[Solver] Proxy={proxy} failed: {e}")
@@ -131,8 +126,8 @@ async def get_user_key_via_seleniumbase_proxy(proxy: Optional[str] = None, timeo
         return None
 
 async def get_user_key_with_rotation(timeout: int = 120) -> Optional[Dict[str, Any]]:
-    log("[Solver] Starting rotation - Webshare proxies FIRST (Azure B1s 1GB)")
-    for proxy in WEBSHARE_PROXIES[:3]:
+    log("[Solver] Starting rotation - Webshare proxies FIRST")
+    for proxy in WEBSHARE_PROXIES[:2]:
         log(f"[Solver] Trying Webshare {proxy[:20]}...")
         result = await get_user_key_via_seleniumbase_proxy(proxy=proxy, timeout=90)
         if result:
@@ -203,7 +198,7 @@ async def generate_via_curl_cffi(prompt: str, user_key: str, ad_code: str, brows
         raise RuntimeError("Download failed")
     return {"imageBytes": dl_result['bytes'], "seed": data.get('seed')}
 
-app = FastAPI(title="Perchance Solver Azure B1s", version="6.0.0-azure-b1s")
+app = FastAPI(title="Perchance Solver Azure B1s Fixed", version="6.1.0-fixed")
 
 class GenerateRequest(BaseModel):
     prompt: str
@@ -214,7 +209,7 @@ class GenerateRequest(BaseModel):
 
 @app.get("/")
 async def root():
-    return {"name": "perchance-solver-azure-b1s", "status": "ok", "version": "6.0.0-azure-b1s", "method": "SeleniumBase UC + Webshare proxy - 1GB optimized", "uptime": int(time.time()-START_TIME)}
+    return {"name": "perchance-solver-azure-b1s-fixed", "status": "ok", "version": "6.1.0-fixed", "chromium": find_chromium(), "exists": os.path.exists(find_chromium()), "uptime": int(time.time()-START_TIME)}
 
 @app.get("/cron")
 @app.head("/cron")
@@ -226,7 +221,7 @@ async def cron():
 
 @app.get("/status")
 async def status():
-    return {"service": "perchance-solver-azure-b1s", "status": "ok", "version": "6.0.0", "uptime": int(time.time()-START_TIME), "ping_count": PING_COUNT["count"], "last_error": LAST_ERROR["error"], "logs": LAST_ERROR["logs"][-20:]}
+    return {"service": "perchance-solver-azure-b1s-fixed", "status": "ok", "version": "6.1.0", "uptime": int(time.time()-START_TIME), "ping_count": PING_COUNT["count"], "chromium": find_chromium(), "chromium_exists": os.path.exists(find_chromium()), "last_error": LAST_ERROR["error"], "logs": LAST_ERROR["logs"][-20:]}
 
 @app.get("/logs")
 async def logs():
@@ -236,7 +231,7 @@ async def logs():
 async def solve():
     result = await get_user_key_with_rotation()
     if not result:
-        raise HTTPException(status_code=500, detail={"error": "Failed to solve", "logs": LAST_ERROR["logs"][-20:]})
+        raise HTTPException(status_code=500, detail={"error": "Failed to solve", "logs": LAST_ERROR["logs"][-20:], "chromium": find_chromium()})
     return {"status": "success", "userKey": result["userKey"], "browserId": result["browserId"], "method": result["method"], "proxy": result.get("proxy")}
 
 @app.post("/generate")
